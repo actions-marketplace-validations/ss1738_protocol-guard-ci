@@ -59,7 +59,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
         node-version: '20'
 
@@ -120,7 +120,7 @@ runs:
 
     - name: Upload SARIF to code scanning
       if: ${{ always() && inputs.upload-sarif == 'true' && hashFiles(format('{0}/{1}/report.sarif', inputs.working-directory, inputs.output-dir)) != '' }}
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       continue-on-error: true # not permitted on fork PRs; the report artifact still has everything
       with:
         sarif_file: ${{ inputs.working-directory }}/${{ inputs.output-dir }}/report.sarif
@@ -128,7 +128,7 @@ runs:
 
     - name: Upload report files
       if: ${{ always() && hashFiles(format('{0}/{1}/report.json', inputs.working-directory, inputs.output-dir)) != '' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: protocol-guard-report
         path: ${{ inputs.working-directory }}/${{ inputs.output-dir }}

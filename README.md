@@ -19,7 +19,7 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0, submodules: recursive }
       - uses: YOUR-ORG/protocol-guard-ci@<tag-or-sha> # where you host this repo
         with: { fail-on: high, fuzz-runs: '1000', invariant-runs: '100' }

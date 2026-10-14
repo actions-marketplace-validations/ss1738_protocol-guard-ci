@@ -1,0 +1,32 @@
+# Copy to .github/workflows/protocol-guard.yml in your Foundry repository.
+name: Protocol Guard CI
+
+on:
+  pull_request: # NOT pull_request_target: this workflow executes the PR's Solidity tests.
+    paths: ['**.sol', 'foundry.toml', 'remappings.txt', '.github/workflows/protocol-guard.yml']
+
+permissions:
+  contents: read
+  security-events: write # SARIF upload; unavailable on fork PRs (upload step tolerates that)
+
+concurrency:
+  group: protocol-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest # prefer an ephemeral or self-hosted isolated runner for untrusted forks
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed to diff against the base branch
+          submodules: recursive # forge dependencies in lib/
+      - uses: YOUR-ORG/protocol-guard-ci@v0.1.0 # pin to a tag or commit SHA
+        with:
+          fail-on: high # use "none" for warning-only while you tune it
+          fuzz-runs: '1000'
+          invariant-runs: '100'
+        env:
+          # Secrets are not needed. Do not add RPC URLs or keys: tests must run offline.
+          CI: 'true'

@@ -7,8 +7,28 @@ evidence (commands, exit codes, file and line references).
 > **It is not an audit and never proves a contract is secure.** A report with no findings means
 > "nothing this tool looks for changed", not "this code is safe". See [Limitations](#limitations).
 
-Status: **Phase 2 of 3** (adds storage-layout comparison, upgrade checks, privilege map, risk signals
-and SARIF). Planned: reusable GitHub Action, example workflow and demo (Phase 3). See [PLAN.md](PLAN.md).
+Status: **MVP complete (phases 1 to 3)**. Docs: [install](docs/INSTALL.md),
+[threat model and limitations](docs/THREAT_MODEL.md), [plan](PLAN.md).
+
+## Use it in GitHub Actions
+
+```yaml
+on: pull_request # never pull_request_target: this runs the PR's tests
+permissions: { contents: read, security-events: write }
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, submodules: recursive }
+      - uses: YOUR-ORG/protocol-guard-ci@<tag-or-sha> # where you host this repo
+        with: { fail-on: high, fuzz-runs: '1000', invariant-runs: '100' }
+```
+
+`fail-on: none` (the default) is warning-only. Full workflow: [`examples/workflows/protocol-guard.yml`](examples/workflows/protocol-guard.yml).
+The job writes a summary, uploads a `protocol-guard-report` artifact, uploads SARIF for inline
+annotations (best effort; not permitted on fork PRs), and only then fails if `fail-on` was met. No
+secrets are needed or read. Try it locally with `scripts/make-demo-repo.sh <dir>`.
 
 ## Install and run
 

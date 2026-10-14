@@ -1,0 +1,145 @@
+name: Protocol Guard CI
+description: >-
+  Review signals and evidence for Solidity/Foundry pull requests: storage-layout and upgrade-safety
+  checks, privilege map, risk signals and Foundry test execution. Not an audit.
+author: protocol-guard-ci
+branding:
+  icon: shield
+  color: gray-dark
+
+inputs:
+  base-ref:
+    description: Base to compare against. Defaults to origin/<PR base branch>. Needs fetch-depth 0 on checkout.
+    required: false
+    default: ''
+  fail-on:
+    description: Fail the job if any finding is at or above this severity (info, low, medium, high, critical) or none for warning-only.
+    required: false
+    default: none
+  fuzz-runs:
+    description: FOUNDRY_FUZZ_RUNS for forge test. Empty keeps the project's foundry.toml value.
+    required: false
+    default: ''
+  invariant-runs:
+    description: FOUNDRY_INVARIANT_RUNS for forge test. Empty keeps the project's foundry.toml value.
+    required: false
+    default: ''
+  skip-tests:
+    description: Run fmt and build only ("true" or "false").
+    required: false
+    default: 'false'
+  working-directory:
+    description: Directory of the Foundry project, relative to the workspace.
+    required: false
+    default: .
+  output-dir:
+    description: Where report files are written, relative to the working directory.
+    required: false
+    default: protocol-guard-report
+  upload-sarif:
+    description: Upload report.sarif to GitHub code scanning ("true" or "false"). Needs security-events write permission.
+    required: false
+    default: 'true'
+  install-foundry:
+    description: Install Foundry with foundry-rs/foundry-toolchain ("true" or "false"). Set false on runners that already have it.
+    required: false
+    default: 'true'
+
+outputs:
+  exit-code:
+    description: Exit status of the analysis (0 ok, 1 finding met fail-on, 2 usage or environment error).
+    value: ${{ steps.run.outputs.exit-code }}
+  max-severity:
+    description: Highest severity found, or none.
+    value: ${{ steps.run.outputs.max-severity }}
+  report-dir:
+    description: Directory containing report.md, report.json, report.sarif and privilege-map.json.
+    value: ${{ steps.run.outputs.report-dir }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - uses: foundry-rs/foundry-toolchain@v1
+      if: ${{ inputs.install-foundry == 'true' }}
+
+    # Inputs are passed through env, never interpolated into scripts, to avoid shell injection.
+    - name: Build Protocol Guard CI
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        cd "$ACTION_PATH"
+        npm ci --ignore-scripts --no-audit --no-fund
+        npm run build
+
+    - name: Analyse pull request
+      id: run
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        WORKDIR: ${{ inputs.working-directory }}
+        BASE_INPUT: ${{ inputs.base-ref }}
+        PR_BASE: ${{ github.base_ref }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        FUZZ_RUNS: ${{ inputs.fuzz-runs }}
+        INVARIANT_RUNS: ${{ inputs.invariant-runs }}
+        SKIP_TESTS: ${{ inputs.skip-tests }}
+        OUT_DIR: ${{ inputs.output-dir }}
+      run: |
+        cd "$WORKDIR"
+        base="$BASE_INPUT"
+        if [ -z "$base" ]; then
+          if [ -z "$PR_BASE" ]; then
+            echo "::error::No base-ref given and this is not a pull_request event. Set the base-ref input."
+            echo "exit-code=2" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="origin/$PR_BASE"
+        fi
+        args=(run --base "$base" --head HEAD --out "$OUT_DIR" --fail-on "$FAIL_ON")
+        [ -n "$FUZZ_RUNS" ] && args+=(--fuzz-runs "$FUZZ_RUNS")
+        [ -n "$INVARIANT_RUNS" ] && args+=(--invariant-runs "$INVARIANT_RUNS")
+        [ "$SKIP_TESTS" = "true" ] && args+=(--skip-tests)
+        # Do not fail here: SARIF upload and the job summary must still happen. The last step enforces the result.
+        set +e
+        node "$ACTION_PATH/dist/cli.js" "${args[@]}"
+        code=$?
+        set -e
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        echo "report-dir=$PWD/$OUT_DIR" >> "$GITHUB_OUTPUT"
+        if [ -f "$OUT_DIR/report.json" ]; then
+          node -e 'const r=require(process.argv[1]);console.log("max-severity="+(r.summary.maxSeverity||"none"))' "$PWD/$OUT_DIR/report.json" >> "$GITHUB_OUTPUT"
+          cat "$OUT_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "max-severity=none" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Upload SARIF to code scanning
+      if: ${{ always() && inputs.upload-sarif == 'true' && hashFiles(format('{0}/{1}/report.sarif', inputs.working-directory, inputs.output-dir)) != '' }}
+      uses: github/codeql-action/upload-sarif@v3
+      continue-on-error: true # not permitted on fork PRs; the report artifact still has everything
+      with:
+        sarif_file: ${{ inputs.working-directory }}/${{ inputs.output-dir }}/report.sarif
+        category: protocol-guard-ci
+
+    - name: Upload report files
+      if: ${{ always() && hashFiles(format('{0}/{1}/report.json', inputs.working-directory, inputs.output-dir)) != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: protocol-guard-report
+        path: ${{ inputs.working-directory }}/${{ inputs.output-dir }}
+
+    - name: Enforce result
+      shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.exit-code }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        if [ "$CODE" != "0" ]; then
+          echo "::error::Protocol Guard CI exited with $CODE (fail-on=$FAIL_ON). See the job summary and the protocol-guard-report artifact."
+          exit "$CODE"
+        fi

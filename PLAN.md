@@ -27,7 +27,8 @@ src/
   upgrade.ts           proxy patterns, _authorizeUpgrade / entrypoint / initializer / inheritance checks
   signals.ts           AST risk signals on added lines
   privileges.ts        privilege map;  sarif.ts  SARIF 2.1.0;  analyze.ts  orchestration
-  (phase 3) action.yml, examples/workflow, docs
+  action.yml (composite), examples/workflows/protocol-guard.yml, docs/{INSTALL,THREAT_MODEL}.md,
+  scripts/make-demo-repo.sh (main + unsafe-pr + safe-pr)
 fixtures/<scenario>/{base,head}/   tiny Foundry projects, offline, no external libs
 test/                  unit tests (fake shell) + integration tests (temp git repo from fixtures)
 ```

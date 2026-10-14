@@ -1,0 +1,75 @@
+# Protocol Guard CI
+
+Self-hosted security CI for Solidity/Foundry pull requests. It compares a pull request against its
+base, executes the repository's Foundry checks, and writes a report of **review signals** with
+evidence (commands, exit codes, file and line references).
+
+> **It is not an audit and never proves a contract is secure.** A report with no findings means
+> "nothing this tool looks for changed", not "this code is safe". See [Limitations](#limitations).
+
+Status: **Phase 1 of 3** (CLI, git diff, Foundry execution, Markdown/JSON reports, fixtures).
+Planned: storage-layout comparison, privilege map, risk signals, SARIF (Phase 2); reusable GitHub
+Action and demo (Phase 3). See [PLAN.md](PLAN.md).
+
+## Install and run
+
+Requires Node 20+, git and [Foundry](https://getfoundry.sh).
+
+```sh
+npm install && npm run build
+node dist/cli.js run --repo path/to/foundry-repo --base origin/main --head HEAD \
+  --out reports --fuzz-runs 1000 --invariant-runs 100 --fail-on high
+```
+
+Options: `--base` (required), `--head` (default `HEAD`), `--repo`, `--out`, `--fuzz-runs`,
+`--invariant-runs`, `--skip-tests`, `--timeout <seconds>`, `--fail-on info|low|medium|high|critical|none`.
+
+Exit codes: `0` ok (or warning-only, the default), `1` a finding met `--fail-on`, `2` usage or
+environment error. Foundry runs against the **checked-out working tree**, so check out the head
+commit before running.
+
+## What Phase 1 reports
+
+- Changed `.sol` files, contracts and public/external functions between base and head (parser-based,
+  line-accurate).
+- Functions gated by an access modifier (`onlyOwner`, `onlyRole`, `auth`, ...) or an in-body
+  `msg.sender` / `hasRole` / `_checkOwner` check; new ones are `high`, modified ones `medium`.
+- `forge fmt --check`, `forge build`, `forge test` (unit, fuzz and invariant tests) with commands,
+  exit codes and normalised output. Run counts are passed as `FOUNDRY_FUZZ_RUNS` and
+  `FOUNDRY_INVARIANT_RUNS`.
+- `report.md` and `report.json` (schema `1.0.0`). Output is deterministic: no timestamps, forge
+  timings and fuzz averages are stripped, findings are sorted, IDs are `PG-<RULE>-<hash>` and do not
+  depend on line numbers.
+
+## Safety properties
+
+- No network access and no telemetry. All external programs run through one `Shell` adapter
+  (`src/adapters/shell.ts`) with no shell interpolation.
+- Captured output is scrubbed of values from secret-looking environment variables, credentials in
+  URLs, RPC-style URLs and 32-byte hex strings before it is stored or printed.
+
+## Fixtures
+
+`fixtures/<scenario>/{base,head}` are small offline Foundry projects (solc 0.8.28, no dependencies):
+`unsafe-storage-reorder`, `unprotected-upgrade`, `new-privileged-withdraw`, `unsafe-delegatecall`,
+`safe-upgrade`, `safe-append`. Integration tests build a temp git repo from each pair.
+
+## Development
+
+```sh
+npm run check    # prettier, tsc, vitest (unit + integration; needs git and forge, no network)
+```
+
+## Limitations
+
+- Privileged-function detection is syntactic: modifier names and `msg.sender` comparisons.
+  Custom access-control schemes can be missed or misclassified.
+- Only changes between the two commits are inspected; unchanged code that interacts with changed
+  code is not analysed.
+- Test results are only as strong as the repository's tests.
+- No on-chain state, deployed bytecode, multisig setup or off-chain operations are examined.
+- Phase 1 does not yet check storage layout, upgrade authorisation or low-level call signals.
+
+## License
+
+Apache-2.0

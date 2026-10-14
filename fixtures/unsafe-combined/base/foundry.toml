@@ -1,0 +1,8 @@
+[profile.default]
+src = "src"
+test = "test"
+solc_version = "0.8.28"
+auto_detect_solc = false
+offline = true
+fuzz = { runs = 64 }
+invariant = { runs = 16, depth = 8 }

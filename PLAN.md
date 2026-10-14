@@ -23,7 +23,10 @@ src/
   findings.ts          Finding type, stable IDs (sha256 of rule+file+symbol), severity ordering
   report.ts            report.json (versioned schema), report.md; deterministic, no timestamps
   cli.ts               argument parsing, exit codes
-  (phase 2) storage.ts, privileges.ts, signals.ts, sarif.ts
+  storage.ts           forge inspect layouts at base (git worktree) and head, pure comparison
+  upgrade.ts           proxy patterns, _authorizeUpgrade / entrypoint / initializer / inheritance checks
+  signals.ts           AST risk signals on added lines
+  privileges.ts        privilege map;  sarif.ts  SARIF 2.1.0;  analyze.ts  orchestration
   (phase 3) action.yml, examples/workflow, docs
 fixtures/<scenario>/{base,head}/   tiny Foundry projects, offline, no external libs
 test/                  unit tests (fake shell) + integration tests (temp git repo from fixtures)

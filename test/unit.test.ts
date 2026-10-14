@@ -173,12 +173,14 @@ describe('report', () => {
           findings: [],
         },
         execution: [],
+        upgradeSafety: { proxyPatterns: [], storage: [], notes: [] },
+        privilegeMap: { schemaVersion: '1.0.0', capabilities: {} },
         extraFindings: [],
         commands: [],
       });
     expect(renderJson(mk())).toBe(renderJson(mk()));
     expect(renderMarkdown(mk())).toContain('not a security audit');
-    expect(JSON.parse(renderJson(mk())).schemaVersion).toBe('1.0.0');
+    expect(JSON.parse(renderJson(mk())).schemaVersion).toBe('1.1.0');
   });
 });
 

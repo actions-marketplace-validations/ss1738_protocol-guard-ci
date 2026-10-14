@@ -1,8 +1,10 @@
 import { maxSeverity, SEVERITIES, sortFindings, type Finding, type Severity } from './findings.js';
 import type { Inspection } from './inspect.js';
 import type { StepResult } from './foundry.js';
+import type { UpgradeSafety } from './analyze.js';
+import type { PrivilegeMap } from './privileges.js';
 
-export const REPORT_SCHEMA_VERSION = '1.0.0';
+export const REPORT_SCHEMA_VERSION = '1.1.0';
 export const TOOL_NAME = 'protocol-guard-ci';
 
 export const LIMITATIONS = [
@@ -10,6 +12,9 @@ export const LIMITATIONS = [
   'Detection of changed functions and privileged access is syntactic (parser output and modifier or comparison names). Custom access-control schemes can be missed or misclassified.',
   'Only changes between the two given commits are inspected. Code that is unchanged but interacts with changed code is not analysed.',
   'Foundry test results are only as strong as the repository tests. Passing tests do not rule out bugs.',
+  'Storage-layout comparison covers contracts defined in changed files that exist at both revisions. A change in an unchanged parent contract that shifts a child layout is not detected.',
+  'Risk signals (delegatecall, assembly, etc.) are reported only on added or modified lines and are review prompts, not confirmed vulnerabilities.',
+  'Proxy pattern detection is textual. Unrecognised or custom proxy designs are reported as uncertain and are not analysed.',
   'No on-chain state, deployed bytecode, multisig configuration or off-chain operations are examined.',
 ];
 
@@ -20,6 +25,8 @@ export interface Report {
   head: { ref: string; sha: string };
   inspection: Omit<Inspection, 'findings'>;
   execution: StepResult[];
+  upgradeSafety: UpgradeSafety;
+  privilegeMap: PrivilegeMap;
   findings: Finding[];
   summary: { counts: Record<Severity, number>; maxSeverity: Severity | null; total: number };
   limitations: string[];
@@ -32,6 +39,8 @@ export interface BuildInput {
   head: { ref: string; sha: string };
   inspection: Inspection;
   execution: StepResult[];
+  upgradeSafety: UpgradeSafety;
+  privilegeMap: PrivilegeMap;
   extraFindings: Finding[];
   /** Extra commands (e.g. git) that were run to produce the report. */
   commands: string[];
@@ -49,6 +58,8 @@ export function buildReport(i: BuildInput): Report {
     head: i.head,
     inspection,
     execution: i.execution,
+    upgradeSafety: i.upgradeSafety,
+    privilegeMap: i.privilegeMap,
     findings,
     summary: { counts, maxSeverity: maxSeverity(findings) ?? null, total: findings.length },
     limitations: LIMITATIONS,
@@ -103,6 +114,37 @@ export function renderMarkdown(r: Report): string {
         `| ${f.contract}.${esc(f.signature)} | ${f.change} | ${f.visibility} | ${f.privileged ? 'yes (' + esc(f.gatedBy.join(', ')) + ')' : 'no'} | ${esc(f.file)}:${f.startLine} |`,
       );
     }
+    L.push('');
+  }
+
+  L.push('## Upgrade safety', '');
+  L.push(
+    'Proxy patterns detected: ' +
+      (r.upgradeSafety.proxyPatterns.length
+        ? [...new Set(r.upgradeSafety.proxyPatterns.map((p) => p.pattern))].join(', ')
+        : 'none') +
+      '',
+    '',
+  );
+  if (r.upgradeSafety.storage.length === 0) L.push('No storage layouts compared.', '');
+  else {
+    L.push('| Contract | File | Storage verdict |', '|---|---|---|');
+    for (const s of r.upgradeSafety.storage)
+      L.push(`| ${s.contract} | ${esc(s.file)} | ${s.verdict} |`);
+    L.push('');
+  }
+  for (const n of r.upgradeSafety.notes) L.push('- ' + n);
+  if (r.upgradeSafety.notes.length) L.push('');
+
+  L.push('## Privilege map', '');
+  const caps = Object.entries(r.privilegeMap.capabilities);
+  if (caps.length === 0) L.push('No privileged functions detected.', '');
+  for (const [cap, list] of caps) {
+    L.push(`**${cap}**`, '');
+    for (const e of list ?? [])
+      L.push(
+        `- ${e.contract}.${e.function} (${e.status}) — ${e.file}:${e.line} via ${e.via.join(', ')}`,
+      );
     L.push('');
   }
 

@@ -7,6 +7,8 @@ import { RealShell, type Shell } from './adapters/shell.js';
 import { resolveRef, GitError } from './git.js';
 import { inspectRepo } from './inspect.js';
 import { runFoundry } from './foundry.js';
+import { analyze } from './analyze.js';
+import { renderSarif } from './sarif.js';
 import { buildReport, renderJson, renderMarkdown } from './report.js';
 import { SEVERITIES, severityRank, type Severity } from './findings.js';
 
@@ -125,13 +127,17 @@ export async function main(
       timeoutMs,
     });
 
+    const analysis = await analyze(shell, repo, baseSha, headSha, timeoutMs);
+
     const report = buildReport({
       version: packageVersion(),
       base: { ref: baseRef, sha: baseSha },
       head: { ref: headRef, sha: headSha },
       inspection,
       execution: foundry.steps,
-      extraFindings: foundry.findings,
+      upgradeSafety: analysis.upgradeSafety,
+      privilegeMap: analysis.privilegeMap,
+      extraFindings: [...foundry.findings, ...analysis.findings],
       commands: [
         `git diff --name-status -M ${baseSha} ${headSha}`,
         `git diff -U0 -M ${baseSha} ${headSha}`,
@@ -142,12 +148,17 @@ export async function main(
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, 'report.json'), renderJson(report));
     writeFileSync(join(outDir, 'report.md'), renderMarkdown(report));
+    writeFileSync(join(outDir, 'report.sarif'), renderSarif(report));
+    writeFileSync(
+      join(outDir, 'privilege-map.json'),
+      JSON.stringify(report.privilegeMap, null, 2) + '\n',
+    );
 
     const c = report.summary.counts;
     io.out(
       `protocol-guard: ${report.summary.total} findings ` +
         `(critical ${c.critical}, high ${c.high}, medium ${c.medium}, low ${c.low}, info ${c.info}). ` +
-        `Wrote ${join(outDir, 'report.md')} and report.json\n`,
+        `Wrote report.md, report.json, report.sarif and privilege-map.json to ${outDir}\n`,
     );
 
     if (

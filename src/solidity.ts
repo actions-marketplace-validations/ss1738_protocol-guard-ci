@@ -39,7 +39,7 @@ export interface ParsedFile {
   parseError?: string;
 }
 
-const MODIFIER_GATE =
+export const MODIFIER_GATE =
   /^(only|auth|requiresAuth|restricted|whenAuthorized|isOwner|isAdmin|isGuardian|isPauser)/i;
 const BODY_GATES: { re: RegExp; label: string }[] = [
   { re: /msg\.sender\s*==\s*\w+|\w+\s*==\s*msg\.sender/, label: 'msg.sender comparison' },
@@ -57,6 +57,17 @@ export function capabilityOf(text: string): Capability {
   if (/admin/.test(t)) return 'admin';
   if (/role|minter|operator|manager|keeper/.test(t)) return 'role';
   return 'owner';
+}
+
+function bodyText(src: string, fn: FunctionDefinition): string {
+  const loc = fn.body?.loc;
+  if (!loc) return '';
+  const lines = src.split('\n');
+  const slice = lines.slice(loc.start.line - 1, loc.end.line);
+  if (slice.length === 0) return '';
+  slice[slice.length - 1] = slice[slice.length - 1]!.slice(0, loc.end.column + 1);
+  slice[0] = slice[0]!.slice(loc.start.column);
+  return slice.join('\n');
 }
 
 function lineSlice(src: string, start: number, end: number): string {
@@ -109,11 +120,11 @@ export function parseSolidity(path: string, source: string): ParsedFile {
       for (const m of modifiers) {
         if (MODIFIER_GATE.test(m)) {
           gatedBy.push(`modifier ${m}`);
-          gates.add(capabilityOf(m));
+          gates.add(capabilityOf(`${m} ${name}`));
         }
       }
       if (fnNode.body) {
-        const body = lineSlice(source, startLine, endLine);
+        const body = bodyText(source, fnNode);
         for (const g of BODY_GATES) {
           if (g.re.test(body)) {
             gatedBy.push(g.label);
@@ -143,4 +154,13 @@ export function parseSolidity(path: string, source: string): ParsedFile {
     });
   }
   return { path, contracts };
+}
+
+/** Parse to a raw AST with locations, or undefined if the source cannot be parsed. */
+export function parseAst(source: string) {
+  try {
+    return parse(source, { loc: true, tolerant: false });
+  } catch {
+    return undefined;
+  }
 }

@@ -7,9 +7,8 @@ evidence (commands, exit codes, file and line references).
 > **It is not an audit and never proves a contract is secure.** A report with no findings means
 > "nothing this tool looks for changed", not "this code is safe". See [Limitations](#limitations).
 
-Status: **Phase 1 of 3** (CLI, git diff, Foundry execution, Markdown/JSON reports, fixtures).
-Planned: storage-layout comparison, privilege map, risk signals, SARIF (Phase 2); reusable GitHub
-Action and demo (Phase 3). See [PLAN.md](PLAN.md).
+Status: **Phase 2 of 3** (adds storage-layout comparison, upgrade checks, privilege map, risk signals
+and SARIF). Planned: reusable GitHub Action, example workflow and demo (Phase 3). See [PLAN.md](PLAN.md).
 
 ## Install and run
 
@@ -41,6 +40,28 @@ commit before running.
   timings and fuzz averages are stripped, findings are sorted, IDs are `PG-<RULE>-<hash>` and do not
   depend on line numbers.
 
+## What Phase 2 adds
+
+Outputs in `--out`: `report.md`, `report.json` (schema `1.1.0`), `report.sarif` (SARIF 2.1.0 for
+GitHub code scanning) and `privilege-map.json`.
+
+- **Storage layout:** `forge inspect <file>:<Contract> storage-layout` at base (in a temporary git
+  worktree, removed afterwards) and at head, compared per contract. Slot moved: `critical`.
+  Type changed: `high`/`critical`. Variable removed or inserted: `high`. Rename: `medium`. Append
+  after the existing layout: `info` (the safe pattern). If forge cannot produce a layout the result is
+  `unavailable` with a `medium` finding rather than a silent pass.
+- **Upgrade authorisation:** `_authorizeUpgrade` with no access check is `critical`
+  (`unprotected-upgrade-authorization`); a changed but gated one is `medium`. Also flagged: ungated
+  upgrade entrypoints, new or changed initializers, removed access control, changed inheritance lists.
+- **Proxy patterns:** UUPS, transparent, beacon and ERC-1967 slot usage detected textually. If
+  initializers exist but no pattern is recognised, an `info` finding says upgrade checks may be incomplete.
+- **Risk signals** on added or modified lines only: `delegatecall`, `selfdestruct`, `tx.origin`,
+  inline assembly, `unchecked`, low-level `call`/`staticcall`, and low-level calls whose target is a
+  parameter of a public function (arbitrary external call). Severity drops one step when the function
+  has an access modifier. These are review prompts, never confirmed vulnerabilities.
+- **Privilege map:** capabilities (owner, admin, role, upgrader, pauser, guardian) to the functions
+  that grant them, with file, line, gate and added/modified/unchanged status.
+
 ## Safety properties
 
 - No network access and no telemetry. All external programs run through one `Shell` adapter
@@ -51,7 +72,7 @@ commit before running.
 ## Fixtures
 
 `fixtures/<scenario>/{base,head}` are small offline Foundry projects (solc 0.8.28, no dependencies):
-`unsafe-storage-reorder`, `unprotected-upgrade`, `new-privileged-withdraw`, `unsafe-delegatecall`,
+`unsafe-combined`, `unsafe-storage-reorder`, `unprotected-upgrade`, `new-privileged-withdraw`, `unsafe-delegatecall`,
 `safe-upgrade`, `safe-append`. Integration tests build a temp git repo from each pair.
 
 ## Development
@@ -68,7 +89,11 @@ npm run check    # prettier, tsc, vitest (unit + integration; needs git and forg
   code is not analysed.
 - Test results are only as strong as the repository's tests.
 - No on-chain state, deployed bytecode, multisig setup or off-chain operations are examined.
-- Phase 1 does not yet check storage layout, upgrade authorisation or low-level call signals.
+- Storage comparison covers contracts defined in changed files that exist at both revisions; a changed
+  parent contract that shifts an unchanged child is not detected.
+- Proxy-pattern detection is textual; custom proxies are reported as uncertain, not analysed.
+- Capability classification (owner vs pauser vs upgrader) uses names and is a hint, not a proof.
+- The base worktree reuses the head checkout's `lib/` and `node_modules/`.
 
 ## License
 

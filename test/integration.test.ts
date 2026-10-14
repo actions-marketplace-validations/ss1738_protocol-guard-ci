@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -80,5 +81,59 @@ describe('integration (real git + forge, offline)', () => {
     const b = await runFixture('unsafe-delegatecall', ['--skip-tests']);
     const strip = (r: Report) => ({ ...r, base: undefined, head: undefined });
     expect(strip(a.report)).toEqual(strip(b.report));
+  }, 120_000);
+
+  it('ACCEPTANCE unsafe: storage warning, upgrade auth, privileged change, file:line, non-zero exit', async () => {
+    const r = await runFixture('unsafe-combined', ['--fail-on', 'high']);
+    const by = (rule: string) => r.report.findings.filter((f) => f.rule === rule);
+    expect(by('storage-slot-moved').length).toBeGreaterThan(0);
+    expect(by('unprotected-upgrade-authorization')).toHaveLength(1);
+    expect(by('new-privileged-function').map((f) => f.symbol)).toEqual([
+      'Vault.withdrawAll(address)',
+    ]);
+    expect(by('signal-delegatecall-arbitrary-target')).toHaveLength(1);
+    for (const f of r.report.findings.filter((x) => x.severity !== 'info')) {
+      if (f.rule.startsWith('forge-')) continue;
+      expect(f.file).toBe('src/Vault.sol');
+      expect(f.line).toBeGreaterThan(0);
+    }
+    expect(r.report.upgradeSafety.storage[0]!.verdict).toBe('unsafe');
+    expect(r.report.upgradeSafety.proxyPatterns.map((p) => p.pattern)).toContain('uups');
+    expect(r.code).toBe(1);
+  }, 120_000);
+
+  it('ACCEPTANCE safe: append and authorised upgrade finish with no high findings', async () => {
+    for (const name of ['safe-append', 'safe-upgrade']) {
+      const r = await runFixture(name, ['--fail-on', 'high']);
+      expect(r.report.summary.counts.high + r.report.summary.counts.critical, name).toBe(0);
+      expect(r.code, name).toBe(0);
+      expect(
+        r.report.execution.every((s) => s.exitCode === 0),
+        name,
+      ).toBe(true);
+    }
+  }, 120_000);
+
+  it('writes SARIF and a privilege map, and cleans up its base worktree', async () => {
+    const repo = makeFixtureRepo('unsafe-storage-reorder');
+    cleanups.push(repo.cleanup);
+    const out = mkdtempSync(join(tmpdir(), 'pg-out-'));
+    cleanups.push(() => rmSync(out, { recursive: true, force: true }));
+    await main(
+      ['run', '--repo', repo.dir, '--base', 'main', '--head', 'pr', '--out', out, '--skip-tests'],
+      new RealShell(),
+      { out: () => {}, err: () => {} },
+    );
+    const sarif = JSON.parse(readFileSync(join(out, 'report.sarif'), 'utf8'));
+    expect(
+      sarif.runs[0].results.some((x: { ruleId: string }) => x.ruleId === 'storage-slot-moved'),
+    ).toBe(true);
+    const pm = JSON.parse(readFileSync(join(out, 'privilege-map.json'), 'utf8'));
+    expect(Object.keys(pm.capabilities)).toEqual(expect.arrayContaining(['pauser', 'upgrader']));
+    const wt = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: repo.dir,
+      encoding: 'utf8',
+    });
+    expect(wt.match(/^worktree /gm)).toHaveLength(1);
   }, 120_000);
 });

@@ -4,7 +4,7 @@
 
 1. Copy [`examples/workflows/protocol-guard.yml`](../examples/workflows/protocol-guard.yml) to
    `.github/workflows/` in your Foundry repository.
-2. The example pins `ss1738/protocol-guard-ci@v0.2.0`. If you host your own fork, change the owner. Pinning a full
+2. The example pins `ss1738/protocol-guard-ci@v0.2.1`. If you host your own fork, change the owner. Pinning a full
    commit SHA is safest.
 3. Keep `fetch-depth: 0` on `actions/checkout` (the diff needs the base branch) and
    `submodules: recursive` if your dependencies live in `lib/`.

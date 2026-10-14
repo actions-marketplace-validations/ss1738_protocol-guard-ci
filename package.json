@@ -1,6 +1,6 @@
 {
   "name": "protocol-guard-ci",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Self-hosted security CI for Solidity/Foundry pull requests: risk signals, upgrade safety and evidence. Not a proof of security.",
   "license": "Apache-2.0",
   "type": "module",

@@ -7,7 +7,7 @@ evidence (commands, exit codes, file and line references).
 > **It is not an audit and never proves a contract is secure.** A report with no findings means
 > "nothing this tool looks for changed", not "this code is safe". See [Limitations](#limitations).
 
-Status: **v0.2.0**. Docs: [install](docs/INSTALL.md),
+Status: **v0.2.1**. Docs: [install](docs/INSTALL.md),
 [threat model and limitations](docs/THREAT_MODEL.md), [plan](PLAN.md).
 
 ## Use it in GitHub Actions
@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with: { fetch-depth: 0, submodules: recursive }
-      - uses: ss1738/protocol-guard-ci@v0.2.0 # pin a tag or a full commit SHA
+      - uses: ss1738/protocol-guard-ci@v0.2.1 # pin a tag or a full commit SHA
         with: { fail-on: high, fuzz-runs: '1000', invariant-runs: '100' }
 ```
 

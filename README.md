@@ -7,7 +7,7 @@ evidence (commands, exit codes, file and line references).
 > **It is not an audit and never proves a contract is secure.** A report with no findings means
 > "nothing this tool looks for changed", not "this code is safe". See [Limitations](#limitations).
 
-Status: **MVP complete (phases 1 to 3)**. Docs: [install](docs/INSTALL.md),
+Status: **v0.2.0**. Docs: [install](docs/INSTALL.md),
 [threat model and limitations](docs/THREAT_MODEL.md), [plan](PLAN.md).
 
 ## Use it in GitHub Actions
@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with: { fetch-depth: 0, submodules: recursive }
-      - uses: YOUR-ORG/protocol-guard-ci@<tag-or-sha> # where you host this repo
+      - uses: ss1738/protocol-guard-ci@v0.2.0 # pin a tag or a full commit SHA
         with: { fail-on: high, fuzz-runs: '1000', invariant-runs: '100' }
 ```
 
@@ -62,7 +62,7 @@ commit before running.
 
 ## What Phase 2 adds
 
-Outputs in `--out`: `report.md`, `report.json` (schema `1.1.0`), `report.sarif` (SARIF 2.1.0 for
+Outputs in `--out`: `report.md`, `report.json` (schema `1.3.0`), `report.sarif` (SARIF 2.1.0 for
 GitHub code scanning) and `privilege-map.json`.
 
 - **Storage layout:** `forge inspect <file>:<Contract> storage-layout` at base (in a temporary git
@@ -81,6 +81,14 @@ GitHub code scanning) and `privilege-map.json`.
   has an access modifier. These are review prompts, never confirmed vulnerabilities.
 - **Privilege map:** capabilities (owner, admin, role, upgrader, pauser, guardian) to the functions
   that grant them, with file, line, gate and added/modified/unchanged status.
+
+## Accepting known findings
+
+Put a `.protocol-guard-ignore` file on your base branch with lines of `<finding-id> # <reason>`. It is
+read from the **base** revision, never the PR head, so a PR cannot silence its own findings. Suppressed
+findings leave `--fail-on` but stay in `report.json`, `report.md` (a "Suppressed Findings" table) and
+SARIF, and stale entries are listed. Entries without a reason are rejected. Details in
+[docs/INSTALL.md](docs/INSTALL.md#accepting-known-findings-protocol-guard-ignore).
 
 ## Slither (optional)
 

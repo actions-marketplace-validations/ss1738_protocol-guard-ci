@@ -4,8 +4,17 @@ import type { StepResult } from './foundry.js';
 import type { UpgradeSafety } from './analyze.js';
 import type { PrivilegeMap } from './privileges.js';
 import type { SlitherSummary } from './slither.js';
+import {
+  applyIgnore,
+  parseIgnore,
+  problemFindings,
+  IGNORE_FILE,
+  type IgnoreReport,
+  type IgnoreSource,
+  type SuppressedFinding,
+} from './ignore.js';
 
-export const REPORT_SCHEMA_VERSION = '1.2.0';
+export const REPORT_SCHEMA_VERSION = '1.3.0';
 export const TOOL_NAME = 'protocol-guard-ci';
 
 export const LIMITATIONS = [
@@ -31,8 +40,17 @@ export interface Report {
   privilegeMap: PrivilegeMap;
   /** Present only when Slither was requested. */
   slither?: SlitherSummary;
+  /** Active findings only. These alone decide --fail-on. */
   findings: Finding[];
-  summary: { counts: Record<Severity, number>; maxSeverity: Severity | null; total: number };
+  /** Findings silenced by the base .protocol-guard-ignore, kept for audit. */
+  suppressed: SuppressedFinding[];
+  ignore: IgnoreReport | null;
+  summary: {
+    counts: Record<Severity, number>;
+    maxSeverity: Severity | null;
+    total: number;
+    suppressed: number;
+  };
   limitations: string[];
   commands: string[];
 }
@@ -47,13 +65,34 @@ export interface BuildInput {
   privilegeMap: PrivilegeMap;
   slither?: SlitherSummary;
   extraFindings: Finding[];
+  /** Contents of the ignore file and where it came from; absent when there is none. */
+  ignore?: { source: IgnoreSource; ref: string; text: string };
   /** Extra commands (e.g. git) that were run to produce the report. */
   commands: string[];
 }
 
 export function buildReport(i: BuildInput): Report {
   const { findings: inspFindings, ...inspection } = i.inspection;
-  const findings = sortFindings([...inspFindings, ...i.extraFindings]);
+  const all = sortFindings([...inspFindings, ...i.extraFindings]);
+  let findings = all;
+  let suppressed: SuppressedFinding[] = [];
+  let ignore: IgnoreReport | null = null;
+  if (i.ignore) {
+    const parsed = parseIgnore(i.ignore.text);
+    const applied = applyIgnore(all, parsed.entries);
+    const problems = [...parsed.problems, ...applied.refused].sort((a, b) => a.line - b.line);
+    findings = sortFindings([...applied.active, ...problemFindings(problems)]);
+    suppressed = applied.suppressed;
+    ignore = {
+      file: IGNORE_FILE,
+      source: i.ignore.source,
+      ref: i.ignore.ref,
+      entries: parsed.entries.length,
+      applied: applied.suppressed.length,
+      stale: applied.stale,
+      problems,
+    };
+  }
   const counts = Object.fromEntries(SEVERITIES.map((s) => [s, 0])) as Record<Severity, number>;
   for (const f of findings) counts[f.severity]++;
   return {
@@ -67,7 +106,14 @@ export function buildReport(i: BuildInput): Report {
     privilegeMap: i.privilegeMap,
     ...(i.slither ? { slither: i.slither } : {}),
     findings,
-    summary: { counts, maxSeverity: maxSeverity(findings) ?? null, total: findings.length },
+    suppressed,
+    ignore,
+    summary: {
+      counts,
+      maxSeverity: maxSeverity(findings) ?? null,
+      total: findings.length,
+      suppressed: suppressed.length,
+    },
     limitations: LIMITATIONS,
     commands: [
       ...i.commands,
@@ -104,6 +150,37 @@ export function renderMarkdown(r: Report): string {
   for (const f of r.findings) {
     const loc = f.file ? ` — \`${f.file}${f.line ? ':' + f.line : ''}\`` : '';
     L.push(`### ${f.severity.toUpperCase()} ${f.id}: ${f.title}${loc}`, '', f.message, '');
+  }
+
+  if (r.ignore) {
+    const where =
+      r.ignore.source === 'base'
+        ? `from base ${IGNORE_FILE}`
+        : `from HEAD ${IGNORE_FILE}: local testing only, never trust the PR's own ignore file`;
+    L.push(`## Suppressed Findings (${where})`, '');
+    L.push(
+      `${r.ignore.applied} of ${r.ignore.entries} valid entries matched a finding (read from \`${r.ignore.ref}\`).`,
+      '',
+    );
+    if (r.suppressed.length) {
+      L.push('| ID | Severity | Rule | Location | Reason |', '|---|---|---|---|---|');
+      for (const f of r.suppressed) {
+        L.push(
+          `| ${f.id} | ${f.severity} | ${f.rule} | ${esc(f.file ?? '')}${f.line ? ':' + f.line : ''} | ${esc(f.suppression.reason)} |`,
+        );
+      }
+      L.push('');
+    }
+    if (r.ignore.stale.length) {
+      L.push('**Stale entries (matched nothing; consider removing):**', '');
+      for (const e of r.ignore.stale) L.push(`- line ${e.line}: ${e.id} # ${esc(e.reason)}`);
+      L.push('');
+    }
+    if (r.ignore.problems.length) {
+      L.push('**Invalid entries (not applied):**', '');
+      for (const p of r.ignore.problems) L.push(`- line ${p.line}: ${esc(p.problem)}`);
+      L.push('');
+    }
   }
 
   L.push('## Changed contracts', '');

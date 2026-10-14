@@ -1,5 +1,6 @@
 import type { Report } from './report.js';
 import type { Severity } from './findings.js';
+import type { SuppressedFinding } from './ignore.js';
 
 const LEVEL: Record<Severity, 'error' | 'warning' | 'note'> = {
   critical: 'error',
@@ -18,7 +19,7 @@ const SECURITY_SEVERITY: Record<Severity, string> = {
 
 /** SARIF 2.1.0 so GitHub code scanning can annotate pull requests. Findings without a file are omitted from `results`. */
 export function renderSarif(r: Report): string {
-  const located = r.findings.filter((f) => f.file);
+  const located = [...r.findings, ...r.suppressed].filter((f) => f.file);
   const rules = [...new Map(located.map((f) => [f.rule, f])).values()]
     .sort((a, b) => a.rule.localeCompare(b.rule))
     .map((f) => ({
@@ -56,6 +57,17 @@ export function renderSarif(r: Report): string {
           ],
           partialFingerprints: { 'protocolGuardId/v1': f.id },
           properties: { severity: f.severity, findingId: f.id },
+          ...('suppression' in f
+            ? {
+                suppressions: [
+                  {
+                    kind: 'external',
+                    status: 'accepted',
+                    justification: (f as SuppressedFinding).suppression.reason,
+                  },
+                ],
+              }
+            : {}),
         })),
       },
     ],

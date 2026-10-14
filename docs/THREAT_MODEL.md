@@ -29,6 +29,15 @@ functions, and a short list of dangerous constructs, with evidence that the repo
 - Signals on added or modified lines: `delegatecall`, `selfdestruct`, `tx.origin`, assembly,
   `unchecked`, low-level calls, low-level calls to a function parameter.
 
+## Ignore file
+
+`.protocol-guard-ignore` lets maintainers accept findings. The risk is a malicious PR suppressing its
+own findings, so the file is read only from the PR's base commit; edits in the PR do not apply and raise
+an `ignore-file-changed` finding. Remaining risk: whoever can push to the base branch controls the file,
+so protect it (CODEOWNERS). Entries match by finding ID, which ignores line numbers, so one entry hides
+every future finding with the same rule, file and symbol. Tooling failures cannot be suppressed.
+`--ignore-from-head` exists for local testing and must not be used in CI.
+
 ## Optional Slither integration
 
 With `--slither` (action input `slither: 'true'`) the job also installs a pinned Slither from PyPI into a

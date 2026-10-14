@@ -4,8 +4,8 @@
 
 1. Copy [`examples/workflows/protocol-guard.yml`](../examples/workflows/protocol-guard.yml) to
    `.github/workflows/` in your Foundry repository.
-2. Replace `YOUR-ORG/protocol-guard-ci@v0.1.2` with the location where you host this repository and a
-   tag or full commit SHA. Pinning a SHA is safest.
+2. The example pins `ss1738/protocol-guard-ci@v0.2.0`. If you host your own fork, change the owner. Pinning a full
+   commit SHA is safest.
 3. Keep `fetch-depth: 0` on `actions/checkout` (the diff needs the base branch) and
    `submodules: recursive` if your dependencies live in `lib/`.
 4. Start with `fail-on: none` (warning-only) to see the signal volume, then raise it (for example
@@ -22,6 +22,29 @@ code-scanning annotations from the SARIF file.
 The workflow needs no secrets. Do not give it RPC URLs or keys; tests must run offline. The tool
 scrubs secret-looking environment values, URL credentials and 32-byte hex strings from anything it
 records, but the safest secret is one that is never provided.
+
+## Accepting known findings: `.protocol-guard-ignore`
+
+Commit a file named `.protocol-guard-ignore` to your **base branch** (usually `main`):
+
+```
+# <finding-id> # <required reason>
+PG-NEW-PRIVILEGED-FUNCTION-d73e9ee6 # owner is a 3/5 multisig, reviewed 2026-10
+```
+
+- The file is read from the **base** revision of each PR, never from the PR itself, so a PR cannot
+  suppress findings it introduces. Changes to the file take effect after they are merged. A PR that
+  edits it gets an `ignore-file-changed` finding so reviewers look at it.
+- Every entry needs a `# reason`. Entries without one, or with a malformed ID, are not applied and
+  produce an `ignore-entry-invalid` finding.
+- IDs are shown in every report (`PG-<RULE>-<8 hex>`). They depend on the rule, file and symbol, not on
+  line numbers, so they survive unrelated edits. One entry hides every future finding with that same ID.
+- Only review signals can be suppressed. Failed `forge` steps, a missing Slither and other tooling
+  findings cannot.
+- Suppressed findings do not count toward `fail-on`. They stay visible in `report.json`
+  (`suppressed`), in a "Suppressed Findings" table in `report.md`, and in SARIF with a `suppressions`
+  entry. Entries that matched nothing are listed as stale.
+- `--ignore-from-head` reads the file from HEAD instead. Use it for local testing only.
 
 ## Command line
 

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,13 +23,18 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 /** Create a temp git repo whose `main` is the fixture base and `pr` is the fixture head. */
-export function makeFixtureRepo(name: string): { dir: string; cleanup: () => void } {
+export function makeFixtureRepo(
+  name: string,
+  opts: { baseIgnore?: string; headIgnore?: string } = {},
+): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), `pg-${name}-`));
   git(dir, 'init', '-q', '-b', 'main');
   cpSync(join(FIXTURES, name, 'base'), dir, {
     recursive: true,
     filter: (s) => !/\/(out|cache)(\/|$)/.test(s),
   });
+  if (opts.baseIgnore !== undefined)
+    writeFileSync(join(dir, '.protocol-guard-ignore'), opts.baseIgnore);
   git(dir, 'add', '-A');
   git(dir, 'commit', '-q', '-m', 'base');
   git(dir, 'checkout', '-q', '-b', 'pr');
@@ -39,6 +44,9 @@ export function makeFixtureRepo(name: string): { dir: string; cleanup: () => voi
     recursive: true,
     filter: (s) => !/\/(out|cache)(\/|$)/.test(s),
   });
+  // Head carries the base ignore file forward unless the test says the PR changed it.
+  const headIgnore = opts.headIgnore ?? opts.baseIgnore;
+  if (headIgnore !== undefined) writeFileSync(join(dir, '.protocol-guard-ignore'), headIgnore);
   git(dir, 'add', '-A');
   git(dir, 'commit', '-q', '-m', 'head');
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };

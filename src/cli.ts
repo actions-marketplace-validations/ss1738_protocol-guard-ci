@@ -4,7 +4,8 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RealShell, type Shell } from './adapters/shell.js';
-import { resolveRef, GitError } from './git.js';
+import { resolveRef, showFile, GitError } from './git.js';
+import { IGNORE_FILE, ignoreChangedFinding } from './ignore.js';
 import { inspectRepo } from './inspect.js';
 import { runFoundry } from './foundry.js';
 import { analyze } from './analyze.js';
@@ -30,6 +31,8 @@ Options:
   --fuzz-runs <n>          Sets FOUNDRY_FUZZ_RUNS for forge test
   --invariant-runs <n>     Sets FOUNDRY_INVARIANT_RUNS for forge test
   --skip-tests             Run fmt and build only
+  --ignore-from-head       Read .protocol-guard-ignore from HEAD instead of BASE. Local testing only:
+                           a PR must never be allowed to suppress its own findings
   --slither                Also run Slither (must be installed) and merge its findings
   --slither-scope <s>      changed (default): only results on changed lines; all: every result
   --timeout <seconds>      Per-command timeout (default: 1800)
@@ -85,6 +88,7 @@ export async function main(
         'fuzz-runs': { type: 'string' },
         'invariant-runs': { type: 'string' },
         'skip-tests': { type: 'boolean' },
+        'ignore-from-head': { type: 'boolean' },
         slither: { type: 'boolean' },
         'slither-scope': { type: 'string' },
         timeout: { type: 'string' },
@@ -136,6 +140,13 @@ export async function main(
       timeoutMs,
     });
 
+    // The ignore file comes from BASE so a PR cannot suppress findings it introduces.
+    const fromHead = values['ignore-from-head'] ?? false;
+    const baseIgnore = await showFile(shell, repo, baseSha, IGNORE_FILE);
+    const headIgnore = await showFile(shell, repo, headSha, IGNORE_FILE);
+    const ignoreText = fromHead ? headIgnore : baseIgnore;
+    const ignoreChanged = !fromHead && baseIgnore !== headIgnore;
+
     const slither = values.slither
       ? await runSlither(shell, repo, baseSha, headSha, {
           scope: slitherScope as SlitherScope,
@@ -153,7 +164,20 @@ export async function main(
       upgradeSafety: analysis.upgradeSafety,
       privilegeMap: analysis.privilegeMap,
       slither: slither?.summary,
-      extraFindings: [...foundry.findings, ...analysis.findings, ...(slither?.findings ?? [])],
+      extraFindings: [
+        ...foundry.findings,
+        ...analysis.findings,
+        ...(slither?.findings ?? []),
+        ...(ignoreChanged ? [ignoreChangedFinding()] : []),
+      ],
+      ignore:
+        ignoreText === undefined
+          ? undefined
+          : {
+              source: fromHead ? 'head' : 'base',
+              ref: fromHead ? headRef : baseRef,
+              text: ignoreText,
+            },
       commands: [
         `git diff --name-status -M ${baseSha} ${headSha}`,
         `git diff -U0 -M ${baseSha} ${headSha}`,

@@ -27,7 +27,7 @@ copy safe-append/base "$dest"
 mkdir -p "$dest/.github/workflows"
 cp "$here/examples/workflows/protocol-guard.yml" "$dest/.github/workflows/"
 if [ -n "${PG_ACTION:-}" ]; then
-  sed -i.bak "s#YOUR-ORG/protocol-guard-ci@v0.1.2#${PG_ACTION}#" "$dest/.github/workflows/protocol-guard.yml" && rm -f "$dest/.github/workflows/protocol-guard.yml.bak"
+  sed -i.bak "s#ss1738/protocol-guard-ci@v0.2.0#${PG_ACTION}#" "$dest/.github/workflows/protocol-guard.yml" && rm -f "$dest/.github/workflows/protocol-guard.yml.bak"
 fi
 printf 'out\ncache\n' > "$dest/.gitignore"
 g add -A && g commit -q -m "Baseline vault (UUPS-style)"

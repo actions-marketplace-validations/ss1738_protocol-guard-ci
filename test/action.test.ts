@@ -35,6 +35,13 @@ describe('action.yml', () => {
     }
   });
 
+  it('meets GitHub Marketplace metadata rules (description under 125 chars, branding, name)', () => {
+    expect(action.name).toBe('Protocol Guard CI');
+    expect(typeof action.description).toBe('string');
+    expect(action.description.length).toBeLessThan(125);
+    expect(action.branding).toEqual({ icon: 'shield', color: 'gray-dark' });
+  });
+
   it('pins every third-party action to a version tag or SHA', () => {
     for (const s of steps.filter((x) => x.uses)) {
       expect(s.uses, s.uses).toMatch(/@(v\d+(\.\d+)*|[0-9a-f]{40})$/);

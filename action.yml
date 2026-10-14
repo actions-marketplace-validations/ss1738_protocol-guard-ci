@@ -1,7 +1,5 @@
 name: Protocol Guard CI
-description: >-
-  Review signals and evidence for Solidity/Foundry pull requests: storage-layout and upgrade-safety
-  checks, privilege map, risk signals and Foundry test execution. Not an audit.
+description: 'Review signals for Solidity/Foundry PRs: storage-layout and upgrade checks, privilege map, risk signals. Not an audit.'
 author: protocol-guard-ci
 branding:
   icon: shield

@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, cpSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  cpSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -98,5 +106,65 @@ describe('untracked dependencies (gitignored node_modules)', () => {
     const r = await run(dir, 'main');
     expect(r.report.upgradeSafety.storage.map((s: any) => s.verdict)).toEqual(['append-only']);
     expect(r.report.findings.some((f: any) => f.rule === 'storage-layout-unavailable')).toBe(false);
+  }, 120_000);
+});
+
+describe('git submodule lib/', () => {
+  const sg = (cwd: string, ...a: string[]) => git(cwd, '-c', 'protocol.file.allow=always', ...a);
+  it('handles gitlink libs, and flags a submodule bump instead of staying silent', async () => {
+    const lib = mk();
+    git(lib, 'init', '-q', '-b', 'main');
+    writeFileSync(
+      join(lib, 'L.sol'),
+      'pragma solidity 0.8.28;\nlibrary L { function one() internal pure returns (uint256) { return 1; } }\n',
+    );
+    git(lib, 'add', '-A');
+    git(lib, 'commit', '-qm', 'lib');
+
+    const dir = mk();
+    git(dir, 'init', '-q', '-b', 'main');
+    cpSync(join(FIXTURES, 'safe-append', 'base'), dir, {
+      recursive: true,
+      filter: (s) => !/\/(out|cache)(\/|$)/.test(s),
+    });
+    writeFileSync(join(dir, '.gitignore'), 'out\ncache\n');
+    writeFileSync(
+      join(dir, 'foundry.toml'),
+      readFileSync(join(dir, 'foundry.toml'), 'utf8') + 'remappings = ["dep/=lib/dep/"]\n',
+    );
+    const vault = join(dir, 'src/Vault.sol');
+    writeFileSync(
+      vault,
+      readFileSync(vault, 'utf8')
+        .replace('contract Vault {', 'import {L} from "dep/L.sol";\n\ncontract Vault {')
+        .replace('return 1;', 'return L.one();'),
+    );
+    sg(dir, 'submodule', 'add', '-q', lib, 'lib/dep');
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-q', '-m', 'base');
+    expect(git(dir, 'ls-files', '-s', 'lib/dep')).toMatch(/^160000/);
+
+    git(dir, 'checkout', '-q', '-b', 'append');
+    writeFileSync(
+      vault,
+      readFileSync(vault, 'utf8').replace(
+        'mapping(address => uint256) public balances;',
+        'mapping(address => uint256) public balances;\n    uint256 public extra;',
+      ),
+    );
+    git(dir, 'commit', '-qam', 'append');
+    const a = await run(dir, 'main');
+    expect(a.report.upgradeSafety.storage.map((x: any) => x.verdict)).toEqual(['append-only']);
+    expect(a.report.findings.map((f: any) => f.rule)).toEqual(['storage-append']);
+
+    git(dir, 'checkout', '-q', 'main');
+    git(dir, 'checkout', '-q', '-b', 'bump');
+    appendFileSync(join(dir, 'lib/dep/L.sol'), '// bump\n');
+    git(join(dir, 'lib/dep'), 'commit', '-qam', 'bump');
+    git(dir, 'commit', '-qam', 'bump submodule');
+    const b = await run(dir, 'main');
+    expect(b.report.findings.map((f: any) => [f.rule, f.file])).toEqual([
+      ['dependency-changed', 'lib/dep'],
+    ]);
   }, 120_000);
 });

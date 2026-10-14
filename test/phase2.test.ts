@@ -236,3 +236,23 @@ describe('forge inspect cache retry', () => {
     expect(sh.calls.filter((c) => c.args.includes('--no-cache'))).toHaveLength(0);
   });
 });
+
+describe('dependency changes', () => {
+  it('flags submodule, lockfile and compiler config changes but not project sources', async () => {
+    const { dependencyFindings } = await import('../src/analyze.js');
+    const f = dependencyFindings([
+      'lib/openzeppelin-contracts',
+      'foundry.toml',
+      'src/A.sol',
+      'README.md',
+      'package-lock.json',
+    ]);
+    expect(f.map((x) => x.file)).toEqual([
+      'foundry.toml',
+      'lib/openzeppelin-contracts',
+      'package-lock.json',
+    ]);
+    expect(f.every((x) => x.rule === 'dependency-changed' && x.severity === 'medium')).toBe(true);
+    expect(f[0]!.message).toContain('NOT detected');
+  });
+});

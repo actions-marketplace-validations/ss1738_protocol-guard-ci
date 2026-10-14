@@ -36,6 +36,30 @@ function varLine(src: string, c: ContractInfo, label: string): number {
   return c.startLine;
 }
 
+const DEPENDENCY_FILES =
+  /^(lib\/|node_modules\/|dependencies\/|foundry\.toml$|remappings\.txt$|\.gitmodules$|package\.json$|package-lock\.json$|yarn\.lock$|pnpm-lock\.yaml$|soldeer\.lock$|foundry\.lock$)/;
+
+/**
+ * The base worktree reuses the head checkout's dependencies, so when dependencies or compiler
+ * configuration change, the storage comparison cannot see their effect. Say so instead of staying silent.
+ */
+export function dependencyFindings(paths: string[]): Finding[] {
+  return paths
+    .filter((p) => DEPENDENCY_FILES.test(p) && !p.endsWith('.sol'))
+    .sort()
+    .map((p) =>
+      makeFinding({
+        rule: 'dependency-changed',
+        severity: 'medium',
+        title: 'Dependency or build configuration changed',
+        message: `${p} changed. Storage-layout checks reuse the head checkout's dependencies for both revisions, so a layout change caused by a library or compiler-setting change is NOT detected. Review the dependency diff and compare layouts of inheriting contracts manually.`,
+        file: p,
+        symbol: p,
+        kind: 'signal',
+      }),
+    );
+}
+
 export async function analyze(
   shell: Shell,
   repo: string,
@@ -45,9 +69,9 @@ export async function analyze(
 ): Promise<Analysis> {
   const findings: Finding[] = [];
   const commands: string[] = [];
-  const changed = (await changedFiles(shell, repo, baseSha, headSha)).filter(
-    (f) => f.path.endsWith('.sol') && f.status !== 'D',
-  );
+  const everything = await changedFiles(shell, repo, baseSha, headSha);
+  findings.push(...dependencyFindings(everything.map((f) => f.path)));
+  const changed = everything.filter((f) => f.path.endsWith('.sol') && f.status !== 'D');
   const changedBy = new Map(changed.map((f) => [f.path, f]));
 
   const ls = await shell.run('git', ['ls-tree', '-r', '--name-only', headSha], { cwd: repo });

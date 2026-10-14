@@ -161,6 +161,34 @@ export function compareLayouts(
   return { comparison: { contract, file, verdict, details: details.sort() }, findings };
 }
 
+/**
+ * `forge inspect` fails with "storage layout missing from artifact" when an earlier `forge build`
+ * cached artifacts without the storageLayout output. Retry once with --no-cache, which recompiles
+ * in memory without clearing the project's out/ or cache/ directories.
+ */
+async function inspectLayout(
+  shell: Shell,
+  cwd: string,
+  t: { contract: string; file: string },
+  timeoutMs: number,
+) {
+  const base = ['inspect', '--json', `${t.file}:${t.contract}`, 'storage-layout'];
+  const commands: string[] = [];
+  let result = await shell.run('forge', base, { cwd, timeoutMs });
+  commands.push(result.command);
+  if (
+    result.exitCode !== 0 &&
+    /storage layout missing|spurious caching/i.test(result.stderr + result.stdout)
+  ) {
+    result = await shell.run('forge', ['inspect', '--no-cache', ...base.slice(1)], {
+      cwd,
+      timeoutMs,
+    });
+    commands.push(result.command);
+  }
+  return { result, commands };
+}
+
 export interface LayoutSource {
   contract: string;
   file: string;
@@ -216,14 +244,13 @@ export async function compareStorage(
       }
     }
     for (const t of targets) {
-      const args = ['inspect', '--json', `${t.file}:${t.contract}`, 'storage-layout'];
       const [b, h] = [
-        await shell.run('forge', args, { cwd: wt, timeoutMs }),
-        await shell.run('forge', args, { cwd: repo, timeoutMs }),
+        await inspectLayout(shell, wt, t, timeoutMs),
+        await inspectLayout(shell, repo, t, timeoutMs),
       ];
-      if (!commands.includes(h.command)) commands.push(h.command);
-      const bl = b.exitCode === 0 ? parseLayout(b.stdout) : undefined;
-      const hl = h.exitCode === 0 ? parseLayout(h.stdout) : undefined;
+      for (const c of [...b.commands, ...h.commands]) if (!commands.includes(c)) commands.push(c);
+      const bl = b.result.exitCode === 0 ? parseLayout(b.result.stdout) : undefined;
+      const hl = h.result.exitCode === 0 ? parseLayout(h.result.stdout) : undefined;
       if (!bl || !hl) {
         unavailable(t, `forge inspect failed for ${bl ? 'head' : 'base'} revision`);
         continue;

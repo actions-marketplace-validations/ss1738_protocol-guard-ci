@@ -89,6 +89,15 @@ GitHub code scanning) and `privilege-map.json`.
 - Captured output is scrubbed of values from secret-looking environment variables, credentials in
   URLs, RPC-style URLs and 32-byte hex strings before it is stored or printed.
 
+## Tested against OpenZeppelin
+
+Run on a real UUPS contract built on OpenZeppelin Contracts (Upgradeable) 5.1.0 with a gitignored
+`lib/`. Safe append: exit 0, `storage-append` info only. Unsafe PR: exit 1 with moved and inserted
+storage, ungated `_authorizeUpgrade`, `delegatecall` to a parameter, a new privileged `sweep`, and a
+failing `forge test`. Swapped inheritance order: `inheritance-changed` (medium); OZ 5 uses ERC-7201
+namespaced storage, so the linear layout is unchanged and the tool does not analyse namespaced slots.
+This run exposed a `forge inspect` stale-cache failure, now handled by a `--no-cache` retry.
+
 ## Fixtures
 
 `fixtures/<scenario>/{base,head}` are small offline Foundry projects (solc 0.8.28, no dependencies):

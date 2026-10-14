@@ -194,3 +194,45 @@ describe('privilege map and SARIF', () => {
     expect(s.runs[0].results[0].partialFingerprints['protocolGuardId/v1']).toMatch(/^PG-/);
   });
 });
+
+describe('forge inspect cache retry', () => {
+  const layout = JSON.stringify({ storage: [], types: {} });
+  it('retries with --no-cache only when the artifact lacks a storage layout', async () => {
+    const { FakeShell } = await import('../src/adapters/shell.js');
+    const { compareStorage } = await import('../src/storage.js');
+    const sh = new FakeShell((cmd, args) => {
+      if (cmd === 'git') return {};
+      if (args.includes('--no-cache')) return { stdout: layout };
+      return {
+        exitCode: 1,
+        stderr:
+          'Error: storage layout missing from artifact; this could be a spurious caching issue',
+      };
+    });
+    const r = await compareStorage(
+      sh,
+      process.cwd(),
+      'abc',
+      [{ contract: 'C', file: 'src/C.sol', line: () => 1 }],
+      1000,
+    );
+    expect(r.comparisons[0]!.verdict).toBe('compatible');
+    expect(r.commands.some((c) => c.includes('--no-cache'))).toBe(true);
+  });
+  it('does not retry on unrelated failures and reports the layout as unavailable', async () => {
+    const { FakeShell } = await import('../src/adapters/shell.js');
+    const { compareStorage } = await import('../src/storage.js');
+    const sh = new FakeShell((cmd) =>
+      cmd === 'git' ? {} : { exitCode: 1, stderr: 'Error: compilation failed' },
+    );
+    const r = await compareStorage(
+      sh,
+      process.cwd(),
+      'abc',
+      [{ contract: 'C', file: 'src/C.sol', line: () => 1 }],
+      1000,
+    );
+    expect(r.comparisons[0]!.verdict).toBe('unavailable');
+    expect(sh.calls.filter((c) => c.args.includes('--no-cache'))).toHaveLength(0);
+  });
+});

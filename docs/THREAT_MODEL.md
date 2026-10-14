@@ -29,6 +29,13 @@ functions, and a short list of dangerous constructs, with evidence that the repo
 - Signals on added or modified lines: `delegatecall`, `selfdestruct`, `tx.origin`, assembly,
   `unchecked`, low-level calls, low-level calls to a function parameter.
 
+## Optional Slither integration
+
+With `--slither` (action input `slither: 'true'`) the job also installs a pinned Slither from PyPI into a
+virtualenv and runs it on the PR's code. That adds a supply-chain dependency (pin the version, review
+upgrades) and runs the same untrusted-code surface as `forge build`. Slither results are advisory,
+overlap with this tool's signals, and by default only results on changed lines are shown.
+
 ## Known limitations and bypasses
 
 - **Custom access control** (bespoke authority contracts, access checks in helper functions, inheritance

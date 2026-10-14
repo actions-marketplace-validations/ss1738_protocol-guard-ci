@@ -180,7 +180,7 @@ describe('report', () => {
       });
     expect(renderJson(mk())).toBe(renderJson(mk()));
     expect(renderMarkdown(mk())).toContain('not a security audit');
-    expect(JSON.parse(renderJson(mk())).schemaVersion).toBe('1.1.0');
+    expect(JSON.parse(renderJson(mk())).schemaVersion).toBe('1.2.0');
   });
 });
 

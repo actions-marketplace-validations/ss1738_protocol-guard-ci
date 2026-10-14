@@ -22,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0 # needed to diff against the base branch
           submodules: recursive # forge dependencies in lib/
-      - uses: YOUR-ORG/protocol-guard-ci@v0.1.1 # pin to a tag or commit SHA
+      - uses: YOUR-ORG/protocol-guard-ci@v0.1.2 # pin to a tag or commit SHA
         with:
           fail-on: high # use "none" for warning-only while you tune it
           fuzz-runs: '1000'

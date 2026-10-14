@@ -82,6 +82,18 @@ GitHub code scanning) and `privilege-map.json`.
 - **Privilege map:** capabilities (owner, admin, role, upgrader, pauser, guardian) to the functions
   that grant them, with file, line, gate and added/modified/unchanged status.
 
+## Slither (optional)
+
+`--slither` runs [Slither](https://github.com/crytic/slither) (must be installed; pinned 0.11.6 is what
+was tested) and merges its results into the same `report.md`, `report.json` and SARIF as
+`slither-<detector>` findings. By default only results that touch **changed lines** are reported
+(`--slither-scope all` for everything), so legacy code does not drown a PR; the report says how many
+pre-existing results were left out. Slither impact maps to severity (High/Medium/Low/Info, one step
+lower when Slither's confidence is Low). Optimisation results are dropped. If Slither is requested but
+missing or fails, a `slither-unavailable` medium finding says its results are absent, rather than a
+silent pass. Slither overlaps with this tool's own signals (for example `delegatecall` to a parameter
+is reported by both) and can produce false positives. In the GitHub Action set `slither: 'true'`.
+
 ## Safety properties
 
 - No network access and no telemetry. All external programs run through one `Shell` adapter

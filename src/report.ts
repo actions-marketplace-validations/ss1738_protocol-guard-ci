@@ -3,8 +3,9 @@ import type { Inspection } from './inspect.js';
 import type { StepResult } from './foundry.js';
 import type { UpgradeSafety } from './analyze.js';
 import type { PrivilegeMap } from './privileges.js';
+import type { SlitherSummary } from './slither.js';
 
-export const REPORT_SCHEMA_VERSION = '1.1.0';
+export const REPORT_SCHEMA_VERSION = '1.2.0';
 export const TOOL_NAME = 'protocol-guard-ci';
 
 export const LIMITATIONS = [
@@ -15,6 +16,7 @@ export const LIMITATIONS = [
   'Storage-layout comparison covers contracts defined in changed files that exist at both revisions. A change in an unchanged parent contract that shifts a child layout is not detected.',
   'Risk signals (delegatecall, assembly, etc.) are reported only on added or modified lines and are review prompts, not confirmed vulnerabilities.',
   'Proxy pattern detection is textual. Unrecognised or custom proxy designs are reported as uncertain and are not analysed.',
+  "Slither (when enabled) runs its default detectors on the whole project and only results touching changed lines are reported by default. Its results are advisory, can include false positives, and overlap with this tool's own signals.",
   'No on-chain state, deployed bytecode, multisig configuration or off-chain operations are examined.',
 ];
 
@@ -27,6 +29,8 @@ export interface Report {
   execution: StepResult[];
   upgradeSafety: UpgradeSafety;
   privilegeMap: PrivilegeMap;
+  /** Present only when Slither was requested. */
+  slither?: SlitherSummary;
   findings: Finding[];
   summary: { counts: Record<Severity, number>; maxSeverity: Severity | null; total: number };
   limitations: string[];
@@ -41,6 +45,7 @@ export interface BuildInput {
   execution: StepResult[];
   upgradeSafety: UpgradeSafety;
   privilegeMap: PrivilegeMap;
+  slither?: SlitherSummary;
   extraFindings: Finding[];
   /** Extra commands (e.g. git) that were run to produce the report. */
   commands: string[];
@@ -60,10 +65,15 @@ export function buildReport(i: BuildInput): Report {
     execution: i.execution,
     upgradeSafety: i.upgradeSafety,
     privilegeMap: i.privilegeMap,
+    ...(i.slither ? { slither: i.slither } : {}),
     findings,
     summary: { counts, maxSeverity: maxSeverity(findings) ?? null, total: findings.length },
     limitations: LIMITATIONS,
-    commands: [...i.commands, ...i.execution.filter((s) => !s.skipped).map((s) => s.command)],
+    commands: [
+      ...i.commands,
+      ...(i.slither?.ran ? [i.slither.command] : []),
+      ...i.execution.filter((s) => !s.skipped).map((s) => s.command),
+    ],
   };
 }
 
@@ -146,6 +156,18 @@ export function renderMarkdown(r: Report): string {
         `- ${e.contract}.${e.function} (${e.status}) — ${e.file}:${e.line} via ${e.via.join(', ')}`,
       );
     L.push('');
+  }
+
+  if (r.slither) {
+    L.push('## Slither', '');
+    if (!r.slither.ran) L.push(`**Did not run:** ${r.slither.error ?? 'unknown reason'}`, '');
+    else {
+      L.push(
+        `Version ${r.slither.version ?? 'unknown'}, scope: ${r.slither.scope}. ${r.slither.totalResults} results; ${r.slither.reported} reported as findings above; ${r.slither.suppressedPreexisting} on unchanged lines not shown.`,
+        '',
+      );
+    }
+    L.push('`' + r.slither.command + '`', '');
   }
 
   L.push('## Foundry execution', '');

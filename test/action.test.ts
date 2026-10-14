@@ -51,6 +51,17 @@ describe('action.yml', () => {
     );
   });
 
+  it('installs Slither only on request, pinned and validated, outside the project', () => {
+    const install = steps.find((x) => x.name === 'Install Slither');
+    expect(action.inputs.slither.default).toBe('false');
+    expect(String(install.if)).toContain("inputs.slither == 'true'");
+    expect(install.run).toContain('python3 -m venv');
+    expect(install.run).toMatch(/\^\[0-9\]\+/); // version format check before it reaches pip
+    expect(steps.find((x) => x.id === 'run').run).toContain(
+      '--slither --slither-scope "$SLITHER_SCOPE"',
+    );
+  });
+
   it('passes fail-on to the CLI and contains no secrets handling', () => {
     const run = steps.find((s) => s.id === 'run');
     expect(run.run).toContain('--fail-on "$FAIL_ON"');

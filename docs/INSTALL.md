@@ -4,7 +4,7 @@
 
 1. Copy [`examples/workflows/protocol-guard.yml`](../examples/workflows/protocol-guard.yml) to
    `.github/workflows/` in your Foundry repository.
-2. Replace `YOUR-ORG/protocol-guard-ci@v0.1.1` with the location where you host this repository and a
+2. Replace `YOUR-ORG/protocol-guard-ci@v0.1.2` with the location where you host this repository and a
    tag or full commit SHA. Pinning a SHA is safest.
 3. Keep `fetch-depth: 0` on `actions/checkout` (the diff needs the base branch) and
    `submodules: recursive` if your dependencies live in `lib/`.
@@ -12,7 +12,7 @@
    `high`) once the team has triaged the baseline.
 
 Inputs: `base-ref`, `fail-on`, `fuzz-runs`, `invariant-runs`, `skip-tests`, `working-directory`,
-`output-dir`, `upload-sarif`, `install-foundry` (see [`action.yml`](../action.yml)). Outputs:
+`output-dir`, `upload-sarif`, `slither`, `slither-version`, `slither-scope`, `install-foundry` (see [`action.yml`](../action.yml)). Outputs:
 `exit-code`, `max-severity`, `report-dir`.
 
 What the job produces: a job summary (`report.md`), an artifact `protocol-guard-report`

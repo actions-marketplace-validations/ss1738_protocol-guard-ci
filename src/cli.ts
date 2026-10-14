@@ -9,6 +9,7 @@ import { inspectRepo } from './inspect.js';
 import { runFoundry } from './foundry.js';
 import { analyze } from './analyze.js';
 import { renderSarif } from './sarif.js';
+import { runSlither, type SlitherScope } from './slither.js';
 import { buildReport, renderJson, renderMarkdown } from './report.js';
 import { SEVERITIES, severityRank, type Severity } from './findings.js';
 
@@ -29,6 +30,8 @@ Options:
   --fuzz-runs <n>          Sets FOUNDRY_FUZZ_RUNS for forge test
   --invariant-runs <n>     Sets FOUNDRY_INVARIANT_RUNS for forge test
   --skip-tests             Run fmt and build only
+  --slither                Also run Slither (must be installed) and merge its findings
+  --slither-scope <s>      changed (default): only results on changed lines; all: every result
   --timeout <seconds>      Per-command timeout (default: 1800)
   --fail-on <severity>     Exit 1 if any finding is at or above: ${SEVERITIES.join('|')}|none (default: none)
   -h, --help               Show this help
@@ -82,6 +85,8 @@ export async function main(
         'fuzz-runs': { type: 'string' },
         'invariant-runs': { type: 'string' },
         'skip-tests': { type: 'boolean' },
+        slither: { type: 'boolean' },
+        'slither-scope': { type: 'string' },
         timeout: { type: 'string' },
         'fail-on': { type: 'string' },
         help: { type: 'boolean', short: 'h' },
@@ -108,6 +113,10 @@ export async function main(
     const baseRef = values.base;
     const headRef = values.head ?? 'HEAD';
     const timeoutMs = (positiveInt('timeout', values.timeout) ?? 1800) * 1000;
+    const slitherScope = values['slither-scope'] ?? 'changed';
+    if (slitherScope !== 'changed' && slitherScope !== 'all') {
+      throw new UsageError(`--slither-scope must be 'changed' or 'all', got '${slitherScope}'`);
+    }
     const fuzzRuns = positiveInt('fuzz-runs', values['fuzz-runs']);
     const invariantRuns = positiveInt('invariant-runs', values['invariant-runs']);
 
@@ -127,6 +136,12 @@ export async function main(
       timeoutMs,
     });
 
+    const slither = values.slither
+      ? await runSlither(shell, repo, baseSha, headSha, {
+          scope: slitherScope as SlitherScope,
+          timeoutMs,
+        })
+      : undefined;
     const analysis = await analyze(shell, repo, baseSha, headSha, timeoutMs);
 
     const report = buildReport({
@@ -137,7 +152,8 @@ export async function main(
       execution: foundry.steps,
       upgradeSafety: analysis.upgradeSafety,
       privilegeMap: analysis.privilegeMap,
-      extraFindings: [...foundry.findings, ...analysis.findings],
+      slither: slither?.summary,
+      extraFindings: [...foundry.findings, ...analysis.findings, ...(slither?.findings ?? [])],
       commands: [
         `git diff --name-status -M ${baseSha} ${headSha}`,
         `git diff -U0 -M ${baseSha} ${headSha}`,

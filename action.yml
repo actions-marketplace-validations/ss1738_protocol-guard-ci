@@ -40,6 +40,18 @@ inputs:
     description: Upload report.sarif to GitHub code scanning ("true" or "false"). Needs security-events write permission.
     required: false
     default: 'true'
+  slither:
+    description: Also run Slither and merge its findings ("true" or "false"). Installs a pinned Slither into a virtualenv.
+    required: false
+    default: 'false'
+  slither-version:
+    description: Slither version to install when slither is true (x.y.z).
+    required: false
+    default: 0.11.6
+  slither-scope:
+    description: 'changed (only Slither results on changed lines) or all.'
+    required: false
+    default: changed
   install-foundry:
     description: Install Foundry with foundry-rs/foundry-toolchain ("true" or "false"). Set false on runners that already have it.
     required: false
@@ -66,6 +78,21 @@ runs:
     - uses: foundry-rs/foundry-toolchain@v1
       if: ${{ inputs.install-foundry == 'true' }}
 
+    - name: Install Slither
+      if: ${{ inputs.slither == 'true' }}
+      shell: bash
+      env:
+        SLITHER_VERSION: ${{ inputs.slither-version }}
+        RUNNER_TMP: ${{ runner.temp }}
+      run: |
+        if ! [[ "$SLITHER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::slither-version must look like 0.11.6"
+          exit 2
+        fi
+        python3 -m venv "$RUNNER_TMP/slither-venv"
+        "$RUNNER_TMP/slither-venv/bin/pip" install --quiet "slither-analyzer==$SLITHER_VERSION"
+        echo "$RUNNER_TMP/slither-venv/bin" >> "$GITHUB_PATH"
+
     # Inputs are passed through env, never interpolated into scripts, to avoid shell injection.
     - name: Build Protocol Guard CI
       shell: bash
@@ -88,6 +115,8 @@ runs:
         FUZZ_RUNS: ${{ inputs.fuzz-runs }}
         INVARIANT_RUNS: ${{ inputs.invariant-runs }}
         SKIP_TESTS: ${{ inputs.skip-tests }}
+        SLITHER: ${{ inputs.slither }}
+        SLITHER_SCOPE: ${{ inputs.slither-scope }}
         OUT_DIR: ${{ inputs.output-dir }}
       run: |
         cd "$WORKDIR"
@@ -104,6 +133,7 @@ runs:
         [ -n "$FUZZ_RUNS" ] && args+=(--fuzz-runs "$FUZZ_RUNS")
         [ -n "$INVARIANT_RUNS" ] && args+=(--invariant-runs "$INVARIANT_RUNS")
         [ "$SKIP_TESTS" = "true" ] && args+=(--skip-tests)
+        [ "$SLITHER" = "true" ] && args+=(--slither --slither-scope "$SLITHER_SCOPE")
         # Do not fail here: SARIF upload and the job summary must still happen. The last step enforces the result.
         set +e
         node "$ACTION_PATH/dist/cli.js" "${args[@]}"
